@@ -39,14 +39,14 @@
 #include "lwip/sockets.h"
 #include "lwip/dns.h"
 
-#define WEB_SERVER "192.168.1.171"
+#define WEB_SERVER "0.0.0.0"
 #define WEB_PORT 80
-#define WEB_URL "http://192.168.1.171/save.php"
+#define WEB_URL "http://0.0.0.0/x.php"
 
-/* Proposed Pin setup for WROVER KIT (DEVKIT J) using camera breakout
-should be configured in the setup menu
-On OV2640 reset pin cannot be connected to the resent on the header due to design constraints,
-connect the reset pin to a the assigned reset pin manually using a wire
+/* Proposed Pin setup for WROVER KIT (DEVKIT J) using camera breakout header.
+This pin assignment should be configured in the setup menu.
+On OV2640, the reset pin cannot be connected to the reset on the header due to design constraints.
+Connect the reset pin to the assigned reset pin manually using a wire
    
         D0 = 4
         D1 = 5
