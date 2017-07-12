@@ -39,12 +39,35 @@
 #include "lwip/sockets.h"
 #include "lwip/dns.h"
 
-#define WEB_SERVER "0.0.0.0"
+#define WEB_SERVER "192.168.1.171"
 #define WEB_PORT 80
-#define WEB_URL "http://0.0.0.0/x.php"
+#define WEB_URL "http://192.168.1.171/save.php"
+
+/* Proposed Pin setup for WROVER KIT (DEVKIT J) using camera breakout
+should be configured in the setup menu
+On OV2640 reset pin cannot be connected to the resent on the header due to design constraints,
+connect the reset pin to a the assigned reset pin manually using a wire
+   
+        D0 = 4
+        D1 = 5
+        D2 = 18
+        D3 = 19
+        D4 = 36
+        D5 = 39
+        D6 = 34
+        D7 = 35
+        XCLK = 21
+        PCLK = 22
+        VSYNC = 25
+        HREF = 23
+        SIO_D = 26
+        SIO_C = 27
+        RESET = 15*/
+		
 
 
 static const char* TAG = "camera_demo";
+//HTTP POST request to send a variable , here the variable is Hi
 static const char *REQUEST = "POST "  WEB_URL " HTTP/1.1\r\n"
                 "Host: "  WEB_SERVER  "\r\n"
                 "Accept: */*\r\n"  				
@@ -254,6 +277,7 @@ static void http_client(void *pvParameters)
 
         ESP_LOGI(TAG, "... connected");
         freeaddrinfo(res);
+	//Once connected to the server , capture the picture
        err_t err1 =camera_run();
 	   if (err1 != ESP_OK)
 		   {
@@ -399,6 +423,7 @@ void app_main()
     }
 	//Server Mode, sends image to a connected client
    // xTaskCreate(&http_server, "http_server", 2048, NULL, 5, NULL);
+   
 	//Client Mode , sends image to a server
 	xTaskCreate(&http_client, "http_client", 2048, NULL, 5, NULL);
 
