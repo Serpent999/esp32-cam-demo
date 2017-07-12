@@ -26,23 +26,32 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "camera.h"
-
-#include <string.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
 #include "esp_event_loop.h"
-#include "esp_log.h"
 #include "nvs_flash.h"
-#include "driver/gpio.h"
 
 #include "lwip/sys.h"
 #include "lwip/netdb.h"
 #include "lwip/api.h"
+#include "lwip/err.h"
+#include "lwip/sockets.h"
+#include "lwip/dns.h"
+
+#define WEB_SERVER "0.0.0.0"
+#define WEB_PORT 80
+#define WEB_URL "http://0.0.0.0/x.php"
+
 
 static const char* TAG = "camera_demo";
+static const char *REQUEST = "POST "  WEB_URL " HTTP/1.1\r\n"
+                "Host: "  WEB_SERVER  "\r\n"
+                "Accept: */*\r\n"  				
+				"Content-Length: 2000\r\n"
+               "Content-Type: application/x-www-form-urlencoded\r\n"
+
+      		    "\r\nHi=";
 
 int state = 0;
 const static char http_hdr[] = "HTTP/1.1 200 OK\r\n";
@@ -190,7 +199,124 @@ static void http_server_netconn_serve(struct netconn *conn)
      so we have to make sure to deallocate the buffer) */
     netbuf_delete(inbuf);
 }
+/*Client mode support https://github.com/Serpent999 
+work in progress
+*/
+static void http_client(void *pvParameters)
+{
+    const struct addrinfo hints = {
+        .ai_family = AF_INET,
+        .ai_socktype = SOCK_STREAM,
+    };
+    struct addrinfo *res;
+    struct in_addr *addr;
+    int s, r;
+    char recv_buf[64];
 
+    while(1) {
+        /* Wait for the callback to set the CONNECTED_BIT in the
+           event group.
+        */
+        xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT,
+                            false, true, portMAX_DELAY);
+        ESP_LOGI(TAG, "Connected to AP");
+
+        int err = getaddrinfo(WEB_SERVER, "80", &hints, &res);
+
+        if(err != 0 || res == NULL) {
+            ESP_LOGE(TAG, "DNS lookup failed err=%d res=%p", err, res);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            continue;
+        }
+
+        /* Code to print the resolved IP.
+
+           Note: inet_ntoa is non-reentrant, look at ipaddr_ntoa_r for "real" code */
+        addr = &((struct sockaddr_in *)res->ai_addr)->sin_addr;
+        ESP_LOGI(TAG, "DNS lookup succeeded. IP=%s", inet_ntoa(*addr));
+
+        s = socket(res->ai_family, res->ai_socktype, 0);
+        if(s < 0) {
+            ESP_LOGE(TAG, "... Failed to allocate socket.");
+            freeaddrinfo(res);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            continue;
+        }
+        ESP_LOGI(TAG, "... allocated socket\r\n");
+
+        if(connect(s, res->ai_addr, res->ai_addrlen) != 0) {
+            ESP_LOGE(TAG, "... socket connect failed errno=%d", errno);
+            close(s);
+            freeaddrinfo(res);
+            vTaskDelay(4000 / portTICK_PERIOD_MS);
+            continue;
+        }
+
+        ESP_LOGI(TAG, "... connected");
+        freeaddrinfo(res);
+       err_t err1 =camera_run();
+	   if (err1 != ESP_OK)
+		   {
+            ESP_LOGD(TAG, "Camera capture failed with error = %d", err1);
+           }
+	  else {
+            ESP_LOGD(TAG, "Done");
+            //Send jpeg
+			
+		if (write(s, REQUEST, strlen(REQUEST)) < 0) {
+            ESP_LOGE(TAG, "... socket send failed");
+            close(s);
+            vTaskDelay(4000 / portTICK_PERIOD_MS);
+            continue;
+        }
+		/*uint8_t* temp=camera_get_fb();
+		char picbuff[100];
+        for (int i=41;i<100;++i)
+		{
+			
+			picbuff[i]=*temp;
+			
+			
+		
+		++temp;
+		}
+		printf("Stored in buff");*/
+		
+		
+		
+		
+		
+		if (write(s,camera_get_fb(),camera_get_data_size()) < 0) {
+            ESP_LOGE(TAG, "... socket send failed");
+            close(s);
+            vTaskDelay(4000 / portTICK_PERIOD_MS);
+            continue;
+        }
+        ESP_LOGI(TAG, "... socket send success");
+	   
+                    
+        }
+	   
+        
+
+        /* Read HTTP response */
+        do {
+            bzero(recv_buf, sizeof(recv_buf));
+            r = read(s, recv_buf, sizeof(recv_buf)-1);
+            for(int i = 0; i < r; i++) {
+                putchar(recv_buf[i]);
+            }
+        } while(r > 0);
+
+        ESP_LOGI(TAG, "... done reading from socket. Last read return=%d errno=%d\r\n", r, errno);
+        close(s);
+        for(int countdown = 10; countdown >= 0; countdown--) {
+            ESP_LOGI(TAG, "%d... ", countdown);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+        }
+        ESP_LOGI(TAG, "Starting again!");
+    }
+}
 static void http_server(void *pvParameters)
 {
     struct netconn *conn, *newconn;
@@ -271,6 +397,10 @@ void app_main()
     if (s_pixel_format == CAMERA_PF_JPEG) {
         ESP_LOGI(TAG, "open http://" IPSTR "/stream for multipart/x-mixed-replace stream (use with JPEGs)", IP2STR(&s_ip_addr));
     }
-    xTaskCreate(&http_server, "http_server", 2048, NULL, 5, NULL);
+	//Server Mode, sends image to a connected client
+   // xTaskCreate(&http_server, "http_server", 2048, NULL, 5, NULL);
+	//Client Mode , sends image to a server
+	xTaskCreate(&http_client, "http_client", 2048, NULL, 5, NULL);
+
 }
 
